@@ -3,7 +3,8 @@
 """
 import os
 import sys
-from typing import List, Optional
+import random
+from typing import List, Optional, Dict
 
 from PySide6.QtWidgets import (
     QApplication,
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QMessageBox,
     QProgressBar,
+    QListWidget,
 )
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFont
@@ -33,6 +35,101 @@ try:
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
+
+
+# 카테고리별 상품 리스트
+CATEGORY_PRODUCTS: Dict[str, List[str]] = {
+    "생활가전": [
+        "공기청정기",
+        "가습기",
+        "히터",
+        "선풍기",
+        "무선청소기",
+        "로봇청소기",
+        "전기포트",
+        "믹서기",
+        "에어프라이어",
+        "전기밥솥",
+        "정수기",
+        "공기청정기 필터",
+        "가습기 필터",
+        "청소기 먼지봉투",
+        "전기매트",
+        "온풍기",
+        "제습기",
+        "미니선풍기",
+        "USB 선풍기",
+        "스탠드형 공기청정기",
+    ],
+    "육아 제품": [
+        "아기 식탁의자",
+        "수유쿠션",
+        "카시트",
+        "유모차",
+        "아기침대",
+        "아기욕조",
+        "젖병",
+        "젖병소독기",
+        "아기띠",
+        "아기침구세트",
+        "아기옷",
+        "기저귀",
+        "아기용품세트",
+        "아기장난감",
+        "아기모빌",
+        "아기체중계",
+        "아기욕실용품",
+        "아기수건",
+        "아기세제",
+        "아기크림",
+    ],
+    "디지털 액세서리": [
+        "마이크",
+        "웹캠",
+        "키보드",
+        "마우스",
+        "헤드셋",
+        "스피커",
+        "USB 허브",
+        "케이블",
+        "충전기",
+        "보조배터리",
+        "노트북 스탠드",
+        "모니터 스탠드",
+        "마우스패드",
+        "키보드 키캡",
+        "블루투스 이어폰",
+        "유선 이어폰",
+        "스마트워치",
+        "태블릿 거치대",
+        "노트북 쿨러",
+        "USB 메모리",
+    ],
+}
+
+# 랜덤 상품 리스트 (쿠팡 인기 상품)
+RANDOM_POPULAR_PRODUCTS = [
+    "공기청정기",
+    "무선청소기",
+    "에어프라이어",
+    "아기 식탁의자",
+    "카시트",
+    "키보드",
+    "마우스",
+    "웹캠",
+    "가습기",
+    "히터",
+    "로봇청소기",
+    "전기포트",
+    "수유쿠션",
+    "유모차",
+    "헤드셋",
+    "블루투스 이어폰",
+    "보조배터리",
+    "노트북 스탠드",
+    "스마트워치",
+    "USB 허브",
+]
 
 
 class KeywordGeneratorThread(QThread):
@@ -235,7 +332,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("쿠팡파트너스 키워드 생성기")
-        self.setGeometry(100, 100, 800, 600)
+        self.setGeometry(100, 100, 900, 800)
         
         # 중앙 위젯
         central_widget = QWidget()
@@ -256,20 +353,74 @@ class MainWindow(QMainWindow):
         title_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(title_label)
         
-        # 카테고리 입력 섹션
-        category_layout = QVBoxLayout()
-        category_label = QLabel("카테고리 입력:")
+        # 카테고리 선택 섹션
+        category_select_layout = QVBoxLayout()
+        category_select_label = QLabel("카테고리 선택:")
         category_font = QFont("맑은 고딕", 10, QFont.Bold)
-        category_label.setFont(category_font)
-        category_layout.addWidget(category_label)
+        category_select_label.setFont(category_font)
+        category_select_layout.addWidget(category_select_label)
+        
+        self.category_combo = QComboBox()
+        self.category_combo.addItems(["생활가전", "육아 제품", "디지털 액세서리"])
+        self.category_combo.currentTextChanged.connect(self.on_category_changed)
+        category_select_layout.addWidget(self.category_combo)
+        layout.addLayout(category_select_layout)
+        
+        # 상품 리스트 섹션
+        product_list_layout = QVBoxLayout()
+        product_list_label = QLabel("상품 리스트:")
+        product_list_label.setFont(category_font)
+        product_list_layout.addWidget(product_list_label)
+        
+        self.product_list = QListWidget()
+        self.product_list.setMaximumHeight(150)
+        self.product_list.itemDoubleClicked.connect(self.on_product_selected)
+        self.product_list.itemClicked.connect(self.on_product_clicked)
+        product_list_layout.addWidget(self.product_list)
+        layout.addLayout(product_list_layout)
+        
+        # 카테고리 입력 섹션 (직접 입력 가능)
+        category_input_layout = QVBoxLayout()
+        category_input_label = QLabel("카테고리 입력 (직접 입력 또는 위에서 선택):")
+        category_input_label.setFont(category_font)
+        category_input_layout.addWidget(category_input_label)
+        
+        category_input_button_layout = QHBoxLayout()
         
         self.category_input = QLineEdit()
         self.category_input.setPlaceholderText(
-            "예: 공기청정기, 가습기, 히터, 선풍기, 아기 식탁의자, 수유쿠션, 카시트, 마이크, 웹캠, 키보드, 마우스 등"
+            "상품 리스트에서 더블클릭하거나 직접 입력하세요"
         )
         self.category_input.setMinimumHeight(35)
-        category_layout.addWidget(self.category_input)
-        layout.addLayout(category_layout)
+        category_input_button_layout.addWidget(self.category_input)
+        
+        # Random 버튼
+        self.random_button = QPushButton("Random")
+        self.random_button.setMinimumHeight(35)
+        self.random_button.setMinimumWidth(80)
+        self.random_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                font-size: 10pt;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+            """
+        )
+        self.random_button.clicked.connect(self.on_random_clicked)
+        category_input_button_layout.addWidget(self.random_button)
+        
+        category_input_layout.addLayout(category_input_button_layout)
+        layout.addLayout(category_input_layout)
+        
+        # 초기 카테고리 설정
+        self.on_category_changed(self.category_combo.currentText())
         
         # LLM 선택 섹션
         llm_layout = QVBoxLayout()
@@ -366,19 +517,93 @@ class MainWindow(QMainWindow):
         
         # 키워드 출력 섹션
         result_layout = QVBoxLayout()
-        result_label = QLabel("생성된 롱테일 키워드:")
+        result_label = QLabel("생성된 롱테일 키워드 (하나를 선택하세요):")
         result_font = QFont("맑은 고딕", 10, QFont.Bold)
         result_label.setFont(result_font)
         result_layout.addWidget(result_label)
         
-        self.keywords_output = QTextEdit()
-        self.keywords_output.setPlaceholderText("생성된 키워드가 여기에 표시됩니다...")
-        self.keywords_output.setReadOnly(True)
-        result_layout.addWidget(self.keywords_output)
+        self.keywords_list = QListWidget()
+        self.keywords_list.setMaximumHeight(200)
+        self.keywords_list.setSelectionMode(QListWidget.SingleSelection)
+        self.keywords_list.itemSelectionChanged.connect(self.on_keyword_selected)
+        result_layout.addWidget(self.keywords_list)
         layout.addLayout(result_layout)
+        
+        # 프롬프트 생성 버튼
+        self.prompt_button = QPushButton("프롬프트 생성")
+        self.prompt_button.setMinimumHeight(40)
+        self.prompt_button.setEnabled(False)  # 초기에는 비활성화
+        self.prompt_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #FF9800;
+                color: white;
+                border: none;
+                border-radius: 5px;
+                font-size: 12pt;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #F57C00;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+            }
+            """
+        )
+        self.prompt_button.clicked.connect(self.generate_prompt)
+        layout.addWidget(self.prompt_button)
+        
+        # 프롬프트 출력 섹션
+        prompt_output_layout = QVBoxLayout()
+        prompt_output_label = QLabel("생성된 프롬프트:")
+        prompt_output_label.setFont(result_font)
+        prompt_output_layout.addWidget(prompt_output_label)
+        
+        self.prompt_output = QTextEdit()
+        self.prompt_output.setPlaceholderText("프롬프트 생성 버튼을 클릭하면 여기에 표시됩니다...")
+        self.prompt_output.setReadOnly(True)
+        prompt_output_layout.addWidget(self.prompt_output)
+        layout.addLayout(prompt_output_layout)
         
         # 키워드 생성 스레드
         self.keyword_thread: Optional[KeywordGeneratorThread] = None
+        
+        # 선택된 키워드 저장
+        self.selected_keyword: Optional[str] = None
+
+    def on_category_changed(self, category: str):
+        """카테고리 변경 시 상품 리스트 업데이트"""
+        self.product_list.clear()
+        if category in CATEGORY_PRODUCTS:
+            self.product_list.addItems(CATEGORY_PRODUCTS[category])
+
+    def on_product_clicked(self, item):
+        """상품 클릭 시 (단일 클릭)"""
+        pass  # 더블클릭만 처리
+
+    def on_product_selected(self, item):
+        """상품 더블클릭 시 키워드 입력창에 자동 입력"""
+        product_name = item.text()
+        self.category_input.setText(product_name)
+
+    def on_random_clicked(self):
+        """Random 버튼 클릭 시 랜덤 상품 선택"""
+        random_product = random.choice(RANDOM_POPULAR_PRODUCTS)
+        self.category_input.setText(random_product)
+        
+        # 해당 상품이 속한 카테고리로 이동
+        for category, products in CATEGORY_PRODUCTS.items():
+            if random_product in products:
+                index = self.category_combo.findText(category)
+                if index >= 0:
+                    self.category_combo.setCurrentIndex(index)
+                    # 상품 리스트에서 해당 상품 선택
+                    items = self.product_list.findItems(random_product, Qt.MatchExactly)
+                    if items:
+                        self.product_list.setCurrentItem(items[0])
+                        self.product_list.scrollToItem(items[0])
+                break
 
     def on_llm_provider_changed(self, provider: str):
         """LLM 제공자 변경 시 호출"""
@@ -418,8 +643,7 @@ class MainWindow(QMainWindow):
         # UI 업데이트
         self.generate_button.setEnabled(False)
         self.progress_bar.setVisible(True)
-        self.keywords_output.clear()
-        self.keywords_output.setPlaceholderText("키워드를 생성하는 중...")
+        self.keywords_list.clear()
         
         # 스레드 생성 및 시작
         self.keyword_thread = KeywordGeneratorThread(category, llm_provider, model)
@@ -434,23 +658,80 @@ class MainWindow(QMainWindow):
         self.generate_button.setEnabled(True)
         
         if keywords:
-            keywords_text = "\n".join(f"• {keyword}" for keyword in keywords)
-            self.keywords_output.setPlainText(keywords_text)
+            self.keywords_list.clear()
+            self.keywords_list.addItems(keywords)
+            # 첫 번째 키워드 자동 선택
+            if self.keywords_list.count() > 0:
+                self.keywords_list.setCurrentRow(0)
+                self.selected_keyword = keywords[0]
+            # 프롬프트 생성 버튼 활성화
+            self.prompt_button.setEnabled(True)
         else:
-            self.keywords_output.setPlainText("생성된 키워드가 없습니다.")
+            self.keywords_list.clear()
+            self.prompt_button.setEnabled(False)
             QMessageBox.information(self, "알림", "생성된 키워드가 없습니다.")
 
     def on_error(self, error_message: str):
         """에러 처리"""
         self.progress_bar.setVisible(False)
         self.generate_button.setEnabled(True)
-        self.keywords_output.setPlainText("")
-        self.keywords_output.setPlaceholderText("생성된 키워드가 여기에 표시됩니다...")
+        self.keywords_list.clear()
+        self.prompt_button.setEnabled(False)
         QMessageBox.critical(self, "오류", f"키워드 생성 중 오류가 발생했습니다:\n\n{error_message}")
 
     def on_progress_updated(self, message: str):
         """진행 상태 업데이트"""
-        self.keywords_output.setPlaceholderText(message)
+        pass  # 진행 상태는 progress_bar로 표시
+
+    def on_keyword_selected(self):
+        """키워드 선택 변경 시 호출"""
+        current_item = self.keywords_list.currentItem()
+        if current_item:
+            self.selected_keyword = current_item.text().strip()
+
+    def generate_prompt(self):
+        """선택된 키워드를 기반으로 프롬프트 생성"""
+        # 선택된 키워드 확인
+        current_item = self.keywords_list.currentItem()
+        if not current_item:
+            QMessageBox.warning(self, "선택 오류", "키워드를 선택해주세요.")
+            return
+        
+        selected_keyword = current_item.text().strip()
+        if not selected_keyword:
+            QMessageBox.warning(self, "선택 오류", "유효한 키워드를 선택해주세요.")
+            return
+        
+        try:
+            # super_agent_prompt.md 파일 읽기
+            prompt_template_path = "super_agent_prompt.md"
+            if not os.path.exists(prompt_template_path):
+                QMessageBox.critical(
+                    self,
+                    "파일 오류",
+                    f"프롬프트 템플릿 파일을 찾을 수 없습니다: {prompt_template_path}",
+                )
+                return
+            
+            with open(prompt_template_path, "r", encoding="utf-8") as f:
+                prompt_template = f.read()
+            
+            # 키워드를 프롬프트에 적용
+            # {USER_KEYWORD} 플레이스홀더를 실제 키워드로 교체
+            prompt = prompt_template.replace("{USER_KEYWORD}", selected_keyword)
+            
+            # 프롬프트 출력
+            self.prompt_output.setPlainText(prompt)
+            
+            # 선택된 키워드 저장
+            self.selected_keyword = selected_keyword
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "오류",
+                f"프롬프트 생성 중 오류가 발생했습니다:\n\n{str(e)}",
+            )
 
 
 def main():
