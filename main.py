@@ -5,6 +5,11 @@ import os
 import sys
 import random
 from typing import List, Optional, Dict
+import yaml
+from dotenv import load_dotenv
+
+# .env 파일 로드
+load_dotenv()
 
 from PySide6.QtWidgets import (
     QApplication,
@@ -36,100 +41,29 @@ try:
 except ImportError:
     OPENAI_AVAILABLE = False
 
+def load_category_products() -> Dict[str, List[str]]:
+    """product.yaml 파일에서 카테고리별 상품 리스트를 로드"""
+    yaml_path = "product.yaml"
+    if not os.path.exists(yaml_path):
+        raise FileNotFoundError(
+            f"product.yaml 파일을 찾을 수 없습니다: {yaml_path}\n"
+            "프로젝트 루트 디렉토리에 product.yaml 파일이 있는지 확인하세요."
+        )
+    
+    with open(yaml_path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    
+    if not isinstance(data, dict):
+        raise ValueError("product.yaml 파일의 형식이 올바르지 않습니다.")
+    
+    return data
+
 
 # 카테고리별 상품 리스트
-CATEGORY_PRODUCTS: Dict[str, List[str]] = {
-    "생활가전": [
-        "공기청정기",
-        "가습기",
-        "히터",
-        "선풍기",
-        "무선청소기",
-        "로봇청소기",
-        "전기포트",
-        "믹서기",
-        "에어프라이어",
-        "전기밥솥",
-        "정수기",
-        "공기청정기 필터",
-        "가습기 필터",
-        "청소기 먼지봉투",
-        "전기매트",
-        "온풍기",
-        "제습기",
-        "미니선풍기",
-        "USB 선풍기",
-        "스탠드형 공기청정기",
-    ],
-    "육아 제품": [
-        "아기 식탁의자",
-        "수유쿠션",
-        "카시트",
-        "유모차",
-        "아기침대",
-        "아기욕조",
-        "젖병",
-        "젖병소독기",
-        "아기띠",
-        "아기침구세트",
-        "아기옷",
-        "기저귀",
-        "아기용품세트",
-        "아기장난감",
-        "아기모빌",
-        "아기체중계",
-        "아기욕실용품",
-        "아기수건",
-        "아기세제",
-        "아기크림",
-    ],
-    "디지털 액세서리": [
-        "마이크",
-        "웹캠",
-        "키보드",
-        "마우스",
-        "헤드셋",
-        "스피커",
-        "USB 허브",
-        "케이블",
-        "충전기",
-        "보조배터리",
-        "노트북 스탠드",
-        "모니터 스탠드",
-        "마우스패드",
-        "키보드 키캡",
-        "블루투스 이어폰",
-        "유선 이어폰",
-        "스마트워치",
-        "태블릿 거치대",
-        "노트북 쿨러",
-        "USB 메모리",
-    ],
-}
+CATEGORY_PRODUCTS: Dict[str, List[str]] = load_category_products()
 
 # 랜덤 상품 리스트 (쿠팡 인기 상품)
-RANDOM_POPULAR_PRODUCTS = [
-    "공기청정기",
-    "무선청소기",
-    "에어프라이어",
-    "아기 식탁의자",
-    "카시트",
-    "키보드",
-    "마우스",
-    "웹캠",
-    "가습기",
-    "히터",
-    "로봇청소기",
-    "전기포트",
-    "수유쿠션",
-    "유모차",
-    "헤드셋",
-    "블루투스 이어폰",
-    "보조배터리",
-    "노트북 스탠드",
-    "스마트워치",
-    "USB 허브",
-]
+RANDOM_POPULAR_PRODUCTS = [item for sublist in CATEGORY_PRODUCTS.values() for item in sublist]
 
 
 class KeywordGeneratorThread(QThread):
@@ -246,7 +180,7 @@ class KeywordGeneratorThread(QThread):
             )
 
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-pro")
+        model = genai.GenerativeModel("gemini-2.0-flash-lite-preview-02-05")
         response = model.generate_content(prompt)
         
         # 응답에서 키워드 추출
@@ -361,7 +295,9 @@ class MainWindow(QMainWindow):
         category_select_layout.addWidget(category_select_label)
         
         self.category_combo = QComboBox()
-        self.category_combo.addItems(["생활가전", "육아 제품", "디지털 액세서리"])
+        # product.yaml에서 카테고리 목록 동적으로 로드
+        category_list = list(CATEGORY_PRODUCTS.keys())
+        self.category_combo.addItems(category_list)
         self.category_combo.currentTextChanged.connect(self.on_category_changed)
         category_select_layout.addWidget(self.category_combo)
         layout.addLayout(category_select_layout)
@@ -717,8 +653,8 @@ class MainWindow(QMainWindow):
                 prompt_template = f.read()
             
             # 키워드를 프롬프트에 적용
-            # {USER_KEYWORD} 플레이스홀더를 실제 키워드로 교체
-            prompt = prompt_template.replace("{USER_KEYWORD}", selected_keyword)
+            # {유저가 입력한 키워드} 플레이스홀더를 실제 키워드로 교체
+            prompt = prompt_template.replace("{유저가 입력한 키워드}", selected_keyword)
             
             # 프롬프트 출력
             self.prompt_output.setPlainText(prompt)
